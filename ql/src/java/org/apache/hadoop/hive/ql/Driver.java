@@ -18,31 +18,10 @@
 
 package org.apache.hadoop.hive.ql;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataInput;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.io.Serializable;
-import java.net.InetAddress;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.stream.Collectors;
-
 import com.google.common.annotations.VisibleForTesting;
-
+import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Sets;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
@@ -62,66 +41,31 @@ import org.apache.hadoop.hive.conf.VariableSubstitution;
 import org.apache.hadoop.hive.metastore.ColumnType;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreUtils;
 import org.apache.hadoop.hive.metastore.Warehouse;
-import org.apache.hadoop.hive.metastore.api.Database;
-import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.metastore.api.LockComponent;
-import org.apache.hadoop.hive.metastore.api.LockType;
-import org.apache.hadoop.hive.metastore.api.Schema;
+import org.apache.hadoop.hive.metastore.api.*;
 import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
 import org.apache.hadoop.hive.ql.cache.results.CacheUsage;
 import org.apache.hadoop.hive.ql.cache.results.QueryResultsCache;
 import org.apache.hadoop.hive.ql.cache.results.QueryResultsCache.CacheEntry;
-import org.apache.hadoop.hive.ql.exec.AbstractFileMergeOperator;
-import org.apache.hadoop.hive.ql.exec.ConditionalTask;
-import org.apache.hadoop.hive.ql.exec.DagUtils;
-import org.apache.hadoop.hive.ql.exec.ExplainTask;
-import org.apache.hadoop.hive.ql.exec.FetchTask;
-import org.apache.hadoop.hive.ql.exec.FunctionInfo;
-import org.apache.hadoop.hive.ql.exec.FunctionUtils;
+import org.apache.hadoop.hive.ql.exec.*;
 import org.apache.hadoop.hive.ql.exec.FunctionInfo.FunctionType;
-import org.apache.hadoop.hive.ql.exec.Operator;
-import org.apache.hadoop.hive.ql.exec.TableScanOperator;
-import org.apache.hadoop.hive.ql.exec.Task;
-import org.apache.hadoop.hive.ql.exec.TaskFactory;
-import org.apache.hadoop.hive.ql.exec.TaskResult;
-import org.apache.hadoop.hive.ql.exec.TaskRunner;
-import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.history.HiveHistory.Keys;
-import org.apache.hadoop.hive.ql.hooks.Entity;
+import org.apache.hadoop.hive.ql.hooks.*;
 import org.apache.hadoop.hive.ql.hooks.Entity.Type;
-import org.apache.hadoop.hive.ql.hooks.HookContext;
-import org.apache.hadoop.hive.ql.hooks.HookUtils;
-import org.apache.hadoop.hive.ql.hooks.PrivateHookContext;
-import org.apache.hadoop.hive.ql.hooks.ReadEntity;
-import org.apache.hadoop.hive.ql.hooks.WriteEntity;
 import org.apache.hadoop.hive.ql.io.AcidUtils;
 import org.apache.hadoop.hive.ql.lockmgr.HiveLock;
 import org.apache.hadoop.hive.ql.lockmgr.HiveLockMode;
 import org.apache.hadoop.hive.ql.lockmgr.HiveTxnManager;
 import org.apache.hadoop.hive.ql.lockmgr.LockException;
 import org.apache.hadoop.hive.ql.log.PerfLogger;
-import org.apache.hadoop.hive.ql.metadata.AuthorizationException;
-import org.apache.hadoop.hive.ql.metadata.Hive;
-import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.metadata.Partition;
 import org.apache.hadoop.hive.ql.metadata.Table;
+import org.apache.hadoop.hive.ql.metadata.*;
 import org.apache.hadoop.hive.ql.metadata.formatting.JsonMetaDataFormatter;
 import org.apache.hadoop.hive.ql.metadata.formatting.MetaDataFormatUtils;
 import org.apache.hadoop.hive.ql.metadata.formatting.MetaDataFormatter;
 import org.apache.hadoop.hive.ql.optimizer.ppr.PartitionPruner;
-import org.apache.hadoop.hive.ql.parse.ASTNode;
-import org.apache.hadoop.hive.ql.parse.BaseSemanticAnalyzer;
-import org.apache.hadoop.hive.ql.parse.ColumnAccessInfo;
+import org.apache.hadoop.hive.ql.parse.*;
 import org.apache.hadoop.hive.ql.parse.ExplainConfiguration.AnalyzeState;
-import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHookContext;
-import org.apache.hadoop.hive.ql.parse.HiveSemanticAnalyzerHookContextImpl;
-import org.apache.hadoop.hive.ql.parse.ImportSemanticAnalyzer;
-import org.apache.hadoop.hive.ql.parse.ParseContext;
-import org.apache.hadoop.hive.ql.parse.ParseException;
-import org.apache.hadoop.hive.ql.parse.ParseUtils;
-import org.apache.hadoop.hive.ql.parse.PrunedPartitionList;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzer;
-import org.apache.hadoop.hive.ql.parse.SemanticAnalyzerFactory;
 import org.apache.hadoop.hive.ql.plan.DDLDesc.DDLDescWithWriteId;
 import org.apache.hadoop.hive.ql.plan.FileSinkDesc;
 import org.apache.hadoop.hive.ql.plan.HiveOperation;
@@ -150,9 +94,14 @@ import org.apache.hive.common.util.TxnIdUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Sets;
+import java.io.*;
+import java.net.InetAddress;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 
 public class Driver implements IDriver {
@@ -605,10 +554,14 @@ public class Driver implements IDriver {
       ctx.setStatsSource(statsSource);
       ctx.setCmd(command);
       ctx.setHDFSCleanup(true);
-
+      /**
+       * todo 1、把HQL命令翻译成一个ASTNodeTree 抽象语法树
+       * ParseUtils 封装了 parseDriver 对 HQL的解析工作
+       * ParseDriver 对command进行了词法分析和语法分析。返回了一个抽象语法树AST
+       */
       perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.PARSE);
 
-      // Trigger query hook before compilation
+      // 编译前触发查询挂钩
       hookRunner.runBeforeParseHook(command);
 
       ASTNode tree;
@@ -1703,12 +1656,25 @@ public class Driver implements IDriver {
     return run(null, true);
   }
 
+  /**
+   *
+   * @param command
+   * @param alreadyCompiled
+   * @return
+   */
   public CommandProcessorResponse run(String command, boolean alreadyCompiled) {
 
     try {
+      /**
+       * todo 该方法内部的实现，只做了两件事：
+       * 1、编译 （SQL --  物理执行计划  queryPlan  包装了taskTree的物理执行计划）
+       * 2、执行 （ launchTask）
+       */
       runInternal(command, alreadyCompiled);
       return createProcessorResponse(0);
-    } catch (CommandProcessorResponse cpr) {
+    }
+    // TODO: 后续都是状态值的一些返回
+    catch (CommandProcessorResponse cpr) {
 
     SessionState ss = SessionState.get();
     if(ss == null) {
@@ -1823,6 +1789,12 @@ public class Driver implements IDriver {
 
 
     try {
+      /**
+       * todo 进行编译
+       * 1、compile 由parseDriver 将SQL转换成ASTNode
+       * 2、 然后由  BaseSemanticAnalyzer 对ASTNode进行分析
+       * 3、 最后由 BaseSemanticAnalyzer 传入QueryPlan构建函数来创建QueryPlan
+       */
       compile(command, true, deferClose);
     } catch (CommandProcessorResponse cpr) {
       try {
@@ -1901,6 +1873,14 @@ public class Driver implements IDriver {
     return compileLock;
   }
 
+  /**
+   *  注释： 这个方法干两件事：
+   *  1、编译 ret = compileInternal(command, true);
+   *  2、执行 ret = execute(true);
+   * @param command
+   * @param alreadyCompiled
+   * @throws CommandProcessorResponse
+   */
   private void runInternal(String command, boolean alreadyCompiled) throws CommandProcessorResponse {
     errorMessage = null;
     SQLState = null;
@@ -1924,13 +1904,12 @@ public class Driver implements IDriver {
       lDrvState.stateLock.unlock();
     }
 
-    // a flag that helps to set the correct driver state in finally block by tracking if
-    // the method has been returned by an error or not.
+    // 如果方法是否由错误返回，则通过跟踪帮助在finally块中设置正确的驱动程序状态的标志。
     boolean isFinishedWithError = true;
     try {
       HiveDriverRunHookContext hookContext = new HiveDriverRunHookContextImpl(conf,
           alreadyCompiled ? ctx.getCmd() : command);
-      // Get all the driver run hooks and pre-execute them.
+      // 让所有驱动程序运行挂钩并预执行它们。
       try {
         hookRunner.runPreDriverHooks(hookContext);
       } catch (Exception e) {
@@ -1945,19 +1924,25 @@ public class Driver implements IDriver {
       PerfLogger perfLogger = null;
 
       if (!alreadyCompiled) {
-        // compile internal will automatically reset the perf logger
+        /**
+         * todo 第一步：编译
+         * 从SQL到 taskTree的转换
+         * 中间过程：
+         *  sql -》 AST -》 parseTree -》 QBTree -》 operatorTree（optimizer） -》 TaskTree（optimizer）
+         *  下方的command 是一个SQL
+         */
+        // compile internal将自动重置性能记录器
         compileInternal(command, true);
-        // then we continue to use this perf logger
+        // 然后我们继续使用这个性能记录器
         perfLogger = SessionState.getPerfLogger();
       } else {
-        // reuse existing perf logger.
+        // 重用现有的性能记录器。
         perfLogger = SessionState.getPerfLogger();
-        // Since we're reusing the compiled plan, we need to update its start time for current run
+        // 由于我们正在重用已编译的计划，因此需要更新当前运行的开始时间
         plan.setQueryStartTime(perfLogger.getStartTime(PerfLogger.DRIVER_RUN));
       }
-      // the reason that we set the txn manager for the cxt here is because each
-      // query has its own ctx object. The txn mgr is shared across the
-      // same instance of Driver, which can run multiple queries.
+      //我们在这里为cxt设置txn管理器的原因是因为每个查询都有自己的ctx对象。
+      // 在驱动程序的同一个实例中共享，该实例可以运行多个查询。
       ctx.setHiveTxnManager(queryTxnMgr);
 
       checkInterrupted("at acquiring the lock.", null, null);
@@ -2008,6 +1993,11 @@ public class Driver implements IDriver {
       }
 
       try {
+        /**
+         * todo  第二步：执行
+         * Driver。run（）中从queryPlan中取出task   并逐个launchTask
+         * launchTask 过程为将 Task 包装为 TaskRunner，并最终调用 TaskRunner.runSequential()
+         */
         execute();
       } catch (CommandProcessorResponse cpr) {
         rollback(cpr);
