@@ -197,8 +197,30 @@ public class ParseDriver {
     if (LOG.isDebugEnabled()) {
       LOG.debug("Parsing command: " + command);
     }
+    /**
+     * hive底层对输入的HQL的语法和此法解析的工具组件：antlr
+     * sparkSQL 底层关于SQL解析的组件是： calcite
+     * ---
+     * antlr 对HQL解析的代码如下方的逻辑，使用HiveLexerX和HiveParser对语法文件HiveLexer.g和HiveParser.g
+     * 编译之后自动生成的语法解析和词法解析的类，在这两个类中做了非常复杂的操作
+     * ---
+     * 如果想新增加一个语法，则需要在HiveParser.g文件中进行定义
+     * 如果想新增加关键字，则需要在HiveLexer.g文件中定义
+     * 定义完成后解析输入的HQL生成tokens Tree
+     * 然后解析tokens Tree生成ASTNode  也就是抽象语法树
+     */
 
+    /**
+     * todo 语法解析
+     * 1、忽略大小写
+     * 2、输入HQL输出TokenTree  也就是TokenRewriteStream
+     * 每一个关键字都会转成一个token
+     */
     HiveLexerX lexer = new HiveLexerX(new ANTLRNoCaseStringStream(command));
+    /**
+     * 根据语法分析的结果得到tokens  此时获取的已不是输入的HQL而是tokenTree
+     * 使用词法和语法解析，来对SQL中的关键字和逻辑执行TOKEN替代
+     */
     TokenRewriteStream tokens = new TokenRewriteStream(lexer);
     if (ctx != null) {
       if (viewFullyQualifiedName == null) {
@@ -210,6 +232,7 @@ public class ParseDriver {
       }
       lexer.setHiveConf(ctx.getConf());
     }
+    //语法解析 HiveParser是 Antlr 根据 HiveParser.g 生成的文件
     HiveParser parser = new HiveParser(tokens);
     if (ctx != null) {
       parser.setHiveConf(ctx.getConf());
@@ -217,6 +240,7 @@ public class ParseDriver {
     parser.setTreeAdaptor(adaptor);
     HiveParser.statement_return r = null;
     try {
+      // TODO: 1、将TOKEN转化成AST
       r = parser.statement();
     } catch (RecognitionException e) {
       e.printStackTrace();
@@ -230,7 +254,7 @@ public class ParseDriver {
     } else {
       throw new ParseException(parser.errors);
     }
-
+    // TODO: 2、将抽象语法树返回
     ASTNode tree = (ASTNode) r.getTree();
     tree.setUnknownTokenBoundaries();
     return tree;

@@ -67,7 +67,11 @@ public final class ParseUtils {
     return parse(command, ctx, null);
   }
 
-  /** Parses the Hive query. */
+  /** Parses the Hive query.
+   *  输入的是一条SQL，输出的是一个抽象语法树AST
+   *  AST（abstract syntax tree）
+   *  ASTNode 是树的头节点
+   * */
   public static ASTNode parse(
       String command, Context ctx, String viewFullyQualifiedName) throws ParseException {
     ParseDriver pd = new ParseDriver();

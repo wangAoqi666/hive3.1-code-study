@@ -554,11 +554,7 @@ public class Driver implements IDriver {
       ctx.setStatsSource(statsSource);
       ctx.setCmd(command);
       ctx.setHDFSCleanup(true);
-      /**
-       * todo 1、把HQL命令翻译成一个ASTNodeTree 抽象语法树
-       * ParseUtils 封装了 parseDriver 对 HQL的解析工作
-       * ParseDriver 对command进行了词法分析和语法分析。返回了一个抽象语法树AST
-       */
+
       perfLogger.PerfLogBegin(CLASS_NAME, PerfLogger.PARSE);
 
       // 编译前触发查询挂钩
@@ -566,6 +562,11 @@ public class Driver implements IDriver {
 
       ASTNode tree;
       try {
+        /**
+         * todo 1、把HQL命令翻译成一个ASTNodeTree 抽象语法树
+         * ParseUtils 封装了 parseDriver 对 HQL的解析工作
+         * ParseDriver 对command进行了词法分析和语法分析。返回了一个抽象语法树AST
+         */
         tree = ParseUtils.parse(command, ctx);
       } catch (ParseException e) {
         parseError = true;
