@@ -140,7 +140,7 @@ public abstract class TaskCompiler {
 
       return;
     }
-
+    // TODO: 1 再次优化 逻辑执行计划
     optimizeOperatorPlan(pCtx, inputs, outputs);
 
     /*
@@ -237,7 +237,7 @@ public abstract class TaskCompiler {
             .get(new MoveWork(null, null, null, lfd, false)));
       }
     }
-
+    // TODO: 2 生成物理执行计划  将operatorTree变成 TaskTree
     generateTaskTree(rootTasks, pCtx, mvTask, inputs, outputs);
 
     // For each task, set the key descriptor for the reducer
@@ -250,7 +250,7 @@ public abstract class TaskCompiler {
     for (Task<? extends Serializable> rootTask : rootTasks) {
       setInputFormat(rootTask);
     }
-
+      // TODO: 3 优化物理计划
     optimizeTaskPlan(rootTasks, pCtx, ctx);
 
     /*
@@ -316,7 +316,9 @@ public abstract class TaskCompiler {
         }
       }
     }
-
+      // TODO: 4 根据参数决定执行模式  本地or集群
+      // 这里会生成很多的maptask和reduceTask
+      // 如果是分布式执行的话,最大的并行度是8
     decideExecMode(rootTasks, ctx, globalLimitCtx);
 
     if (pCtx.getQueryProperties().isCTAS() && !pCtx.getCreateTable().isMaterialization()) {

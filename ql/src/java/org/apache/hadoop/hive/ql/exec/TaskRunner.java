@@ -73,6 +73,7 @@ public class TaskRunner extends Thread {
     runner = Thread.currentThread();
     try {
       SessionState.start(ss);
+      //todo 真正执行task的地方
       runSequential();
     } finally {
       try {
@@ -94,6 +95,7 @@ public class TaskRunner extends Thread {
   public void runSequential() {
     int exitVal = -101;
     try {
+      //这里
       exitVal = tsk.executeTask(ss == null ? null : ss.getHiveHistory());
     } catch (Throwable t) {
       if (tsk.getException() == null) {

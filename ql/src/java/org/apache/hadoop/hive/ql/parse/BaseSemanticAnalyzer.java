@@ -282,6 +282,7 @@ public abstract class BaseSemanticAnalyzer {
   public void analyze(ASTNode ast, Context ctx) throws SemanticException {
     initCtx(ctx);
     init(true);
+    // todo 分析AST 抽象语法数
     analyzeInternal(ast);
   }
 

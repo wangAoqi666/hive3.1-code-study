@@ -50,7 +50,9 @@ public class ASTNode extends CommonTree implements Node,Serializable {
    * Constructor.
    *
    * @param t
-   *          Token for the CommonTree Node
+   *          Token for the CommonTree Node 编码的
+   *
+   *
    */
   public ASTNode(Token t) {
     super(t);

@@ -11299,6 +11299,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     // Recurse over the subqueries to fill the subquery part of the plan
     for (String alias : qb.getSubqAliases()) {
       QBExpr qbexpr = qb.getSubqForAlias(alias);
+      // TODO: 由QB生成 operator
       Operator<?> operator = genPlan(qb, qbexpr);
       aliasToOpInfo.put(alias, operator);
       if (qb.getViewToTabSchema().containsKey(alias)) {
@@ -11966,9 +11967,11 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     ctesExpanded = new ArrayList<String>();
 
     // 1. analyze and process the position alias
+    // TODO: 1 处理别名
     // step processPositionAlias out of genResolvedParseTree
 
     // 2. analyze create table command
+    // TODO: 2 处理create table 命令
     if (ast.getToken().getType() == HiveParser.TOK_CREATETABLE) {
       // if it is not CTAS, we don't need to go further and just return
       if ((child = analyzeCreateTable(ast, qb, plannerCtx)) == null) {
@@ -11979,6 +11982,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     }
 
     // 3. analyze create view command
+    // TODO: 3 处理视图命令
     if (ast.getToken().getType() == HiveParser.TOK_CREATEVIEW ||
         ast.getToken().getType() == HiveParser.TOK_CREATE_MATERIALIZED_VIEW ||
         (ast.getToken().getType() == HiveParser.TOK_ALTERVIEW &&
@@ -12021,6 +12025,9 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     tableMask = new TableMask(this, conf, ctx.isSkipTableMasking());
 
     // 4. continue analyzing from the child ASTNode.
+    // TODO: 4 将AST转成QB,就是将多个不能分开的token 封装成QB
+    // 后面还会将Qb编程operators (对应的是一个sql语法关键字)
+    // 然后再将AST转成 operatorTree
     Phase1Ctx ctx_1 = initPhase1Ctx();
     if (!doPhase1(child, qb, ctx_1, plannerCtx)) {
       // if phase1Result false return
@@ -12030,6 +12037,9 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
     // 5. Resolve Parse Tree
     // Materialization is allowed if it is not a view definition
+    // TODO: 5 处理和元数据相关的交互
+    // 会涉及到和mysql以及HDFS打交道
+    // select * from xxx;  应该理解成MR中的 InputFormat.setInput(xxx的HDFS目录)
     getMetaData(qb, createVwDesc == null);
     LOG.info("Completed getting MetaData in Semantic Analysis");
 
@@ -12122,10 +12132,19 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
   void analyzeInternal(ASTNode ast, PlannerContextFactory pcf) throws SemanticException {
     LOG.info("Starting Semantic Analysis");
     // 1. Generate Resolved Parse tree from syntax tree
+    // TODO: 1、从语法树转成解析树
+    /**
+     * - AST 转换成MR程序仍然很困难，AST Tree不够结构化
+     * - 转化成QueryBlock就是将SQL进一步抽象和结构化
+     * - QB是一条SQL最基本的组成单元，包含三个部分：输入源，计算过程，输出
+     * - 这个环节，会有和元数据库交互的部分
+     * - 把ASTNode 转成 QB组成的 子查询树
+     */
     boolean needsTransform = needsTransform();
     //change the location of position alias process here
     processPositionAlias(ast);
     PlannerContext plannerCtx = pcf.create();
+    //跳转 genResolvedParseTree
     if (!genResolvedParseTree(ast, plannerCtx)) {
       return;
     }
@@ -12161,6 +12180,12 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     }
 
     // 2. Gen OP Tree from resolved Parse Tree
+    // TODO: 2、解析树转成一个operatorTree
+    /**
+     * 其实就是生成了一个DAG
+     * hive最终生成的MR任务,map端和reduce端均由operatorTree组成,
+     * 逻辑操作符,就是在map阶段或者是reduce阶段完成单一特定的操作
+     */
     Operator sinkOp = genOPTree(ast, plannerCtx);
 
     boolean usesMasking = false;
@@ -12195,9 +12220,12 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     }
 
     // 3. Deduce Resultset Schema
+    // TODO: 3、推断出结果集的Schema
     if (createVwDesc != null && !this.ctx.isCboSucceeded()) {
+      //根据RowResolver来解析结果集Schema信息
       resultSchema = convertRowSchemaToViewSchema(opParseCtx.get(sinkOp).getRowResolver());
     } else {
+      //CBO(Cost Based Optimizer)的作用是: 在多表join的时候,会选择最优的join顺序
       // resultSchema will be null if
       // (1) cbo is disabled;
       // (2) or cbo is enabled with AST return path (whether succeeded or not,
@@ -12211,6 +12239,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     }
 
     // 4. Generate Parse Context for Optimizer & Physical compiler
+    // TODO: 4 构建parseContext 为第7步的优化而做准备
     copyInfoToQueryProperties(queryProperties);
     ParseContext pCtx = new ParseContext(queryState, opToPartPruner, opToPartList, topOps,
         new HashSet<JoinOperator>(joinContext.keySet()),
@@ -12228,6 +12257,8 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     pCtx.setDisableMapJoin(disableMapJoinWithHint(getQB().getParseInfo().getHintList()));
 
     // 5. Take care of view creation
+    // TODO: 5 处理视图定义
+    // 视图是表的另外一种存在形式, 表是有真实数据的,而视图是封装了一个未执行SQL的结果集的别名
     if (createVwDesc != null) {
       if (ctx.getExplainAnalyze() == AnalyzeState.RUNNING) {
         return;
@@ -12280,12 +12311,14 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     }
 
     // 6. Generate table access stats if required
+    // TODO: 6 生成访问的统计信息
     if (HiveConf.getBoolVar(this.conf, HiveConf.ConfVars.HIVE_STATS_COLLECT_TABLEKEYS)) {
       TableAccessAnalyzer tableAccessAnalyzer = new TableAccessAnalyzer(pCtx);
       setTableAccessInfo(tableAccessAnalyzer.analyzeTableAccess());
     }
 
     // 7. Perform Logical optimization
+    // TODO: 7 执行逻辑优化
     if (LOG.isDebugEnabled()) {
       LOG.debug("Before logical optimization\n" + Operator.toString(pCtx.getTopOps().values()));
     }
@@ -12303,6 +12336,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
     // 8. Generate column access stats if required - wait until column pruning
     // takes place during optimization
+    // TODO: 8  在优化过程中进行列剪裁
     boolean isColumnInfoNeedForAuth = SessionState.get().isAuthorizationModeV2()
         && HiveConf.getBoolVar(conf, HiveConf.ConfVars.HIVE_AUTHORIZATION_ENABLED);
     if (isColumnInfoNeedForAuth
@@ -12314,6 +12348,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
     // 9. Optimize Physical op tree & Translate to target execution engine (MR,
     // TEZ..)
+    // TODO: 9 执行物理优化,并生成最终的物理执行计划  operatorTree  ===> taskTree
     if (!ctx.getExplainLogical()) {
       TaskCompiler compiler = TaskCompilerFactory.getCompiler(conf, pCtx);
       compiler.init(queryState, console, db);
@@ -12324,6 +12359,8 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     QueryPlanPostProcessor qp = new QueryPlanPostProcessor(rootTasks, acidFileSinks, ctx.getExecutionId());
 
     // 10. Attach CTAS/Insert-Commit-hooks for Storage Handlers
+    // TODO: 10 为存储处理程序附加 CTAS/Insert-Commit-hooks
+
     final Optional<TezTask> optionalTezTask =
         rootTasks.stream().filter(task -> task instanceof TezTask).map(task -> (TezTask) task)
             .findFirst();
@@ -12343,6 +12380,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     LOG.info("Completed plan generation");
 
     // 11. put accessed columns to readEntity
+    // TODO: 11 将访问的列放入 readEntity
     if (HiveConf.getBoolVar(this.conf, HiveConf.ConfVars.HIVE_STATS_COLLECT_SCANCOLS)) {
       putAccessedColumnsToReadEntity(inputs, columnAccessInfo);
     }

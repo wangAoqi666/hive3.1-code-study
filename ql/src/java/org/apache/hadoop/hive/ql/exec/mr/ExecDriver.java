@@ -230,7 +230,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
     ioPrepareCache.clear();
 
     boolean success = true;
-
+    // TODO: 2022/7/13  获取上下文对象
     Context ctx = driverContext.getCtx();
     boolean ctxCreated = false;
     Path emptyScratchDir;
@@ -240,7 +240,9 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
       LOG.warn("Task was cancelled");
       return 5;
     }
-
+    /**
+     * 这里对应的就是程序中的MapTask和ReduceTask
+     */
     MapWork mWork = work.getMapWork();
     ReduceWork rWork = work.getReduceWork();
 
@@ -249,7 +251,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
         ctx = new Context(job);
         ctxCreated = true;
       }
-
+// TODO: 2022/7/13 获取work的临时目录
       emptyScratchDir = ctx.getMRTmpPath();
       FileSystem fs = emptyScratchDir.getFileSystem(job);
       fs.mkdirs(emptyScratchDir);
@@ -259,18 +261,20 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
           + org.apache.hadoop.util.StringUtils.stringifyException(e));
       return 5;
     }
-
+    // TODO: 2022/7/13 设置hive的输出
     HiveFileFormatUtils.prepareJobOutput(job);
     //See the javadoc on HiveOutputFormatImpl and HadoopShims.prepareJobOutput()
+    // TODO: 2022/7/13 设置 OutputFormat
     job.setOutputFormat(HiveOutputFormatImpl.class);
-
+    // TODO: 2022/7/13 注册maptask
     job.setMapRunnerClass(ExecMapRunner.class);
     job.setMapperClass(ExecMapper.class);
-
+    // TODO: 2022/7/13 设置map输出的k和v的类型
     job.setMapOutputKeyClass(HiveKey.class);
     job.setMapOutputValueClass(BytesWritable.class);
 
     try {
+      // TODO: 2022/7/13 设置partitioner组件
       String partitioner = HiveConf.getVar(job, ConfVars.HIVEPARTITIONER);
       job.setPartitionerClass(JavaUtils.loadClass(partitioner));
     } catch (ClassNotFoundException e) {
@@ -278,14 +282,17 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
     }
 
     propagateSplitSettings(job, mWork);
-
+    // TODO: 2022/7/13 注册reducetask
     job.setNumReduceTasks(rWork != null ? rWork.getNumReduceTasks().intValue() : 0);
+    // TODO: 2022/7/13 设置reduce的个数
     job.setReducerClass(ExecReducer.class);
 
     // set input format information if necessary
+
     setInputAttributes(job);
 
     // Turn on speculative execution for reducers
+    // TODO: 2022/7/13 是否开启推测执行
     boolean useSpeculativeExecReducers = HiveConf.getBoolVar(job,
         HiveConf.ConfVars.HIVESPECULATIVEEXECREDUCERS);
     job.setBoolean(MRJobConfig.REDUCE_SPECULATIVE, useSpeculativeExecReducers);
@@ -299,12 +306,14 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
     LOG.info("Using " + inpFormat);
 
     try {
+      // TODO: 2022/7/13 设置inputFormat
       job.setInputFormat(JavaUtils.loadClass(inpFormat));
     } catch (ClassNotFoundException e) {
       throw new RuntimeException(e.getMessage(), e);
     }
 
     // No-Op - we don't really write anything here ..
+    // TODO: 2022/7/13 设置输出的k和v的类型
     job.setOutputKeyClass(Text.class);
     job.setOutputValueClass(Text.class);
 
@@ -313,6 +322,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
 
     if (noName) {
       // This is for a special case to ensure unit tests pass
+      // TODO: 2022/7/13 生成一个job的名字
       job.set(MRJobConfig.JOB_NAME, "JOB" + Utilities.randGen.nextInt());
     }
 
@@ -320,7 +330,9 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
       MapredLocalWork localwork = mWork.getMapRedLocalWork();
       if (localwork != null && localwork.hasStagedAlias()) {
         if (!ShimLoader.getHadoopShims().isLocalMode(job)) {
+          // 本地目录:存放配置文件,需要用到的jar,日志信息,执行计划等
           Path localPath = localwork.getTmpPath();
+          // 工作目录(HDFS的临时目录): 将本地目录打包上传到HDFS上
           Path hdfsPath = mWork.getTmpHDFSPath();
 
           FileSystem hdfs = hdfsPath.getFileSystem(job);
@@ -356,6 +368,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
         }
       }
       work.configureJobConf(job);
+      // TODO: 2022/7/13 设置Task的输入
       List<Path> inputPaths = Utilities.getInputPaths(job, mWork, emptyScratchDir, ctx, false);
       Utilities.setInputPaths(job, inputPaths);
 
@@ -377,7 +390,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
           job.setNumReduceTasks(1);
         }
       }
-
+      // TODO: 2022/7/13 实例化一个提交JOb的客户端
       jc = new JobClient(job);
       // make this client wait if job tracker is not behaving well.
       Throttle.checkJobTracker(job, LOG);
@@ -419,7 +432,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
         LOG.warn("Task was cancelled");
         return 5;
       }
-
+// TODO: 2022/7/13 提交JOB到集群
       rj = jc.submitJob(job);
 
       if (driverContext.isShutdown()) {

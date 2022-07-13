@@ -609,7 +609,18 @@ public class Driver implements IDriver {
         openTransaction();
         generateValidTxnList();
       }
-
+      /**
+       * todo 2、进行语义分析 生成queryPlan
+       * 主要是将AST转成TaskTree  包括优化OPTIMIZER
+       * 抽象语法数据交给SemanticAnalyzer进行解析,过程如下:
+       * 1、从AST转成解析数  parseTree
+       * 2、通过ParseTree在生成QB  （queryPlan：不能再继续拆分的独立执行的逻辑单元）
+       * 3、从QB数再生成operatorTree(logical Plan)
+       * 4、优化逻辑计划
+       * 5、再将operatorTree转成Task Tree（物理执行计划  queryPlan）
+       * 6、针对物理执行计划再进行优化
+       * 7、生成queryPlan
+       */
       sem.analyze(tree, ctx);
 
       if (executeHooks) {
@@ -2234,7 +2245,7 @@ public class Driver implements IDriver {
     } finally {
       lDrvState.stateLock.unlock();
     }
-
+    // TODO: 2022/7/12 设置最大的并行  8
     maxthreads = HiveConf.getIntVar(conf, HiveConf.ConfVars.EXECPARALLETHREADNUMBER);
 
     HookContext hookContext = null;
@@ -2292,6 +2303,10 @@ public class Driver implements IDriver {
       // The main thread polls the TaskRunners to check if they have finished.
 
       checkInterrupted("before running tasks.", hookContext, perfLogger);
+      // TODO: 2022/7/12 1、实例化一个驱动的上下文对象
+      //这里维护了两个队列:
+      // 1- runnable队列 等待执行的队列
+      // 2- running队列  正在执行
 
       DriverContext driverCxt = new DriverContext(ctx);
       driverCxt.prepare(plan);
@@ -2302,7 +2317,8 @@ public class Driver implements IDriver {
       SessionState.get().setMapRedStats(new LinkedHashMap<>());
       SessionState.get().setStackTraces(new HashMap<>());
       SessionState.get().setLocalMapRedErrors(new HashMap<>());
-
+      // TODO: 2022/7/12 2、添加所有的rootTasks 到 runnable队列中
+      // plan: queryPlan
       // Add root Tasks to runnable
       for (Task<? extends Serializable> tsk : plan.getRootTasks()) {
         // This should never happen, if it does, it's a bug with the potential to produce
@@ -2323,6 +2339,8 @@ public class Driver implements IDriver {
         // Launch upto maxthreads tasks
         Task<? extends Serializable> task;
         while ((task = driverCxt.getRunnable(maxthreads)) != null) {
+          // TODO: 2022/7/12 3、加载任务执行，这里是提交给yarn的入口
+          // 任务运行结果在TaskRunner中的TaskResult对象中
           TaskRunner runner = launchTask(task, queryId, noName, jobname, jobs, driverCxt);
           if (!runner.isRunning()) {
             break;
@@ -2404,7 +2422,7 @@ public class Driver implements IDriver {
               Keys.TASK_RET_CODE, String.valueOf(exitVal));
           SessionState.get().getHiveHistory().endTask(queryId, tsk);
         }
-
+        // TODO: 2022/7/12 4、当这个task执行完毕之后，他的子任务可以开始执行了，并添加到runnable队列中
         if (tsk.getChildTasks() != null) {
           for (Task<? extends Serializable> child : tsk.getChildTasks()) {
             if (DriverContext.isLaunchable(child)) {
@@ -2508,6 +2526,7 @@ public class Driver implements IDriver {
           console.printInfo("Stage-" + entry.getKey() + ": " + entry.getValue());
           totalCpu += entry.getValue().getCpuMSec();
         }
+        // 打印耗时
         console.printInfo("Total MapReduce CPU Time Spent: " + Utilities.formatMsecToStr(totalCpu));
       }
       lDrvState.stateLock.lock();
@@ -2522,7 +2541,7 @@ public class Driver implements IDriver {
         LOG.info("Completed executing command(queryId=" + queryId + "); Time taken: " + duration + " seconds");
       }
     }
-
+    // 打印OK
     if (console != null) {
       console.printInfo("OK");
     }
@@ -2626,6 +2645,7 @@ public class Driver implements IDriver {
   private TaskRunner launchTask(Task<? extends Serializable> tsk, String queryId, boolean noName,
       String jobname, int jobs, DriverContext cxt) throws HiveException {
     if (SessionState.get() != null) {
+      // hive history 是用来记录hive的任务历史的
       SessionState.get().getHiveHistory().startTask(queryId, tsk, tsk.getClass().getName());
     }
     if (tsk.isMapRedTask() && !(tsk instanceof ConditionalTask)) {
@@ -2638,20 +2658,25 @@ public class Driver implements IDriver {
       console.printInfo("Launching Job " + cxt.getCurJobNo() + " out of " + jobs);
     }
     tsk.initialize(queryState, plan, cxt, ctx.getOpContext());
+    //构建一个任务运行对象
+    //这里TaskRunner继承了Tread类,也就是说,这个对象就是一个线程
     TaskRunner tskRun = new TaskRunner(tsk);
 
     cxt.launching(tskRun);
     // Launch Task
+    //这里如果是并行执行的话,默认是false
     if (HiveConf.getBoolVar(conf, HiveConf.ConfVars.EXECPARALLEL) && tsk.canExecuteInParallel()) {
       // Launch it in the parallel mode, as a separate thread only for MR tasks
       if (LOG.isInfoEnabled()){
         LOG.info("Starting task [" + tsk + "] in parallel");
       }
+      //这个地方底层也是封装的tskRun.runSequential();
       tskRun.start();
     } else {
       if (LOG.isInfoEnabled()){
         LOG.info("Starting task [" + tsk + "] in serial mode");
       }
+      //任务执行
       tskRun.runSequential();
     }
     return tskRun;
